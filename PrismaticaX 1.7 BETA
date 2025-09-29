@@ -23,7 +23,7 @@ local VersionTag = Window:Tag({
     Color = Color3.fromHex("#1E1E1E")
 })
 
--- Add time tag with MSK time (UTC +3)
+-- Add time tag with MSK time
 local TimeTag = Window:Tag({ Title = "--:--", Color = Color3.fromHex("#1E1E1E") })
 task.spawn(function()
     while true do
