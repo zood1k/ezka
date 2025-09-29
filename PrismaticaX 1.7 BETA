@@ -27,7 +27,7 @@ local VersionTag = Window:Tag({
 local TimeTag = Window:Tag({ Title = "--:--", Color = Color3.fromHex("#1E1E1E") })
 task.spawn(function()
     while true do
-        local now = os.date("*t", os.time() + 3*3600)
+        local now = os.date("*t", os.time() + 0*3600)
         TimeTag:SetTitle(string.format("%02d:%02d", now.hour, now.min))
         task.wait(1)
     end
