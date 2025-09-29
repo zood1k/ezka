@@ -1,0 +1,2357 @@
+-- Load WindUi library
+local WindUi = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+
+-- Create main window
+local Window = WindUi:CreateWindow({
+    Title = "PrismaticaX",
+    Icon = "sparkles",
+    Author = "By @zood3llotgk",
+    Size = UDim2.fromOffset(600, 450),
+    Theme = "Dark",
+    Acrylic = false,
+    HideSearchBar = true,
+    SideBarWidth = 160,
+    User = {
+        Enabled = true,
+        Anonymous = false
+    }
+})
+
+-- Add version tag
+local VersionTag = Window:Tag({
+    Title = "v1.7",
+    Color = Color3.fromHex("#1E1E1E")
+})
+
+-- Add time tag with MSK time (UTC +3)
+local TimeTag = Window:Tag({ Title = "--:--", Color = Color3.fromHex("#1E1E1E") })
+task.spawn(function()
+    while true do
+        local now = os.date("*t", os.time() + 3*3600)
+        TimeTag:SetTitle(string.format("%02d:%02d", now.hour, now.min))
+        task.wait(1)
+    end
+end)
+
+local WindUITag = Window:Tag({
+    Title = "WindUI",
+    Color = Color3.fromHex("#1E1E1E")
+})
+
+-- Change tag colors on theme change
+WindUi:OnThemeChange(function(theme)
+    local tagColor
+    if theme == "Dark" then
+        tagColor = Color3.fromHex("#1E1E1E")
+    elseif theme == "Light" then
+        tagColor = Color3.fromHex("#F0F0F0")
+    elseif theme == "Rose" then
+        tagColor = Color3.fromHex("#FF69B4")
+    elseif theme == "Amber" then
+        tagColor = Color3.fromHex("#FFBF00")
+    elseif theme == "CottonCandy" then
+        tagColor = Color3.fromHex("#FFB6C1")
+    elseif theme == "Crimson" then
+        tagColor = Color3.fromHex("#DC143C")
+    elseif theme == "Emerald" then
+        tagColor = Color3.fromHex("#50C878")
+    elseif theme == "Indigo" then
+        tagColor = Color3.fromHex("#4B0082")
+    elseif theme == "Midnight" then
+        tagColor = Color3.fromHex("#191970")
+    elseif theme == "MonokaiPro" then
+        tagColor = Color3.fromHex("#2D2A2E")
+    elseif theme == "Plant" then
+        tagColor = Color3.fromHex("#228B22")
+    elseif theme == "Rainbow" then
+        tagColor = Color3.fromHex("#FF0000")
+    elseif theme == "Red" then
+        tagColor = Color3.fromHex("#FF0000")
+    elseif theme == "Violet" then
+        tagColor = Color3.fromHex("#EE82EE")
+    elseif theme == "Sky" then
+        tagColor = Color3.fromHex("#87CEEB")
+    else
+        tagColor = Color3.fromHex("#1E1E1E")
+    end
+    VersionTag:SetColor(tagColor)
+    TimeTag:SetColor(tagColor)
+    WindUITag:SetColor(tagColor)
+end)
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+local ContextActionService = game:GetService("ContextActionService")
+local CoreGui = game:GetService("CoreGui")
+local StarterGui = game:GetService("StarterGui")
+
+-- Add GUI visibility toggle with Insert key
+local isGuiVisible = true
+local guiToggleConnection
+guiToggleConnection = UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
+    if gameProcessedEvent then return end
+    if input.KeyCode == Enum.KeyCode.Insert then
+        isGuiVisible = not isGuiVisible
+        local screenGui = CoreGui:FindFirstChild("WindUI")
+        if screenGui then
+            screenGui.Enabled = isGuiVisible
+        end
+    end
+end)
+
+-- Centralized effect management
+local EffectManager = {
+    Effects = {},
+    Connections = {},
+    Objects = {},
+    Active = {}
+}
+
+function EffectManager:RegisterEffect(name, enableFunc, disableFunc)
+    self.Effects[name] = { Enable = enableFunc, Disable = disableFunc }
+end
+
+function EffectManager:EnableEffect(name)
+    if self.Effects[name] and not self.Active[name] then
+        pcall(function()
+            self.Effects[name].Enable()
+            self.Active[name] = true
+        end)
+    end
+end
+
+function EffectManager:DisableEffect(name)
+    if self.Effects[name] and self.Active[name] then
+        pcall(function()
+            self.Effects[name].Disable()
+            self.Active[name] = false
+        end)
+    end
+end
+
+function EffectManager:ClearVisual()
+    for name, _ in pairs(self.Active) do
+        self:DisableEffect(name)
+    end
+    for _, conn in pairs(self.Connections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    for _, obj in pairs(self.Objects) do
+        pcall(function() obj:Destroy() end)
+    end
+    self.Connections = {}
+    self.Objects = {}
+    self.Active = {}
+end
+
+-- Rainbow color function
+local function RainbowColor(time)
+    local hue = (time % 6) / 6
+    return Color3.fromHSV(hue, 1, 1)
+end
+
+-- Global rainbow update loop
+local rainbowUpdaters = {}
+local rainbowConnection
+local function StartRainbowLoop()
+    if rainbowConnection then return end
+    rainbowConnection = RunService.RenderStepped:Connect(function()
+        local t = tick()
+        for name, updater in pairs(rainbowUpdaters) do
+            pcall(updater, t)
+        end
+    end)
+end
+
+local function StopRainbowLoop()
+    if rainbowConnection and next(rainbowUpdaters) == nil then
+        pcall(function() rainbowConnection:Disconnect() end)
+        rainbowConnection = nil
+    end
+end
+
+-- Rainbow Ui Gradient
+task.spawn(function()
+    task.wait(0.5)
+    local CoreGui = game:GetService("CoreGui")
+    local screenGui = CoreGui:FindFirstChild("WindUI")
+    if not screenGui then return end
+
+    local function ApplyGradient(obj)
+        if not (obj:IsA("Frame") or obj:IsA("TextLabel") or obj:IsA("TextButton")) then return end
+        obj.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        if obj:FindFirstChild("UIGradient") then return end
+        local gradient = Instance.new("UIGradient")
+        gradient.Rotation = 45
+        gradient.Parent = obj
+        local conn
+        conn = RunService.RenderStepped:Connect(function()
+            if not obj or not obj.Parent or not gradient.Parent then
+                pcall(function() conn:Disconnect() end)
+                return
+            end
+            local t = tick()
+            gradient.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+                ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 0)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 255))
+            })
+        end)
+    end
+
+    for _, obj in pairs(screenGui:GetDescendants()) do
+        ApplyGradient(obj)
+    end
+
+    local descendantConn = screenGui.DescendantAdded:Connect(ApplyGradient)
+end)
+
+-- Player variables
+local OriginalWalkSpeed = 16
+local OriginalJumpPower = 50
+local OriginalJumpHeight = 7.2
+local OriginalUseJumpPower = true
+local CurrentWalkSpeed = 16
+local CurrentJumpPower = 50
+local InfiniteJumpEnabled = false
+local NoclipEnabled = false
+local FlyEnabled = false
+local FlySpeed = 50
+local flyBodyVelocity
+local flyConnection
+local noclipConnection
+local speedConnection
+local jumpConnection
+local trails = {}
+local trailsCharConn
+local particleEmitter
+local particlesCharConn
+local chinaHat
+local chinaHatConn
+local starTrailEmitter
+local starTrailConn
+local aimbotEnabled = false
+local aimbotFOV = 200
+local aimbotConnection
+local fovCircle
+local fovScreenGui
+local lockedTarget = nil
+local aimbotActive = false
+local aimbotBind = "MB2"
+local aimbotMode = "Hold"
+local SpinbotEnabled = false
+local SpinbotSpeed = 10
+local spinbotConnection
+local TeamCheckEnabled = false
+local teamCheckConnection
+local WallCheckEnabled = false
+local wallCheckConnection
+local espTextSize = 25
+local espColor = Color3.fromRGB(255, 255, 255)
+local espRed = 255
+local espGreen = 255
+local espBlue = 255
+local trollGuiLoaded = false
+local highlightEspEnabled = false
+local nameEspEnabled = false
+local distanceEspEnabled = false
+local EspTeamCheckEnabled = false
+
+-- Bind mappings
+local bindMap = {
+    MB1 = {Type = "UserInputType", Value = Enum.UserInputType.MouseButton1},
+    MB2 = {Type = "UserInputType", Value = Enum.UserInputType.MouseButton2},
+    MB3 = {Type = "UserInputType", Value = Enum.UserInputType.MouseButton3},
+    Q = {Type = "KeyCode", Value = Enum.KeyCode.Q},
+    E = {Type = "KeyCode", Value = Enum.KeyCode.E},
+    R = {Type = "KeyCode", Value = Enum.KeyCode.R},
+    T = {Type = "KeyCode", Value = Enum.KeyCode.T},
+    Y = {Type = "KeyCode", Value = Enum.KeyCode.Y},
+    U = {Type = "KeyCode", Value = Enum.KeyCode.U},
+    I = {Type = "KeyCode", Value = Enum.KeyCode.I},
+    O = {Type = "KeyCode", Value = Enum.KeyCode.O},
+    P = {Type = "KeyCode", Value = Enum.KeyCode.P},
+    F = {Type = "KeyCode", Value = Enum.KeyCode.F},
+    G = {Type = "KeyCode", Value = Enum.KeyCode.G},
+    H = {Type = "KeyCode", Value = Enum.KeyCode.H},
+    J = {Type = "KeyCode", Value = Enum.KeyCode.J},
+    K = {Type = "KeyCode", Value = Enum.KeyCode.K},
+    L = {Type = "KeyCode", Value = Enum.KeyCode.L},
+    Z = {Type = "KeyCode", Value = Enum.KeyCode.Z},
+    X = {Type = "KeyCode", Value = Enum.KeyCode.X},
+    C = {Type = "KeyCode", Value = Enum.KeyCode.C},
+    V = {Type = "KeyCode", Value = Enum.KeyCode.V},
+    B = {Type = "KeyCode", Value = Enum.KeyCode.B},
+    N = {Type = "KeyCode", Value = Enum.KeyCode.N},
+    M = {Type = "KeyCode", Value = Enum.KeyCode.M},
+    One = {Type = "KeyCode", Value = Enum.KeyCode.One},
+    Two = {Type = "KeyCode", Value = Enum.KeyCode.Two},
+    Three = {Type = "KeyCode", Value = Enum.KeyCode.Three},
+    Four = {Type = "KeyCode", Value = Enum.KeyCode.Four},
+    Five = {Type = "KeyCode", Value = Enum.KeyCode.Five},
+    LShift = {Type = "KeyCode", Value = Enum.KeyCode.LeftShift},
+    RShift = {Type = "KeyCode", Value = Enum.KeyCode.RightShift},
+    LCtrl = {Type = "KeyCode", Value = Enum.KeyCode.LeftControl},
+    RCtrl = {Type = "KeyCode", Value = Enum.KeyCode.RightControl},
+    LAlt = {Type = "KeyCode", Value = Enum.KeyCode.LeftAlt},
+    RAlt = {Type = "KeyCode", Value = Enum.KeyCode.RightAlt}
+}
+
+-- Function to check if input matches bind
+local function IsMatchingInput(input)
+    local bindInfo = bindMap[aimbotBind]
+    if not bindInfo then return false end
+    if bindInfo.Type == "UserInputType" then
+        return input.UserInputType == bindInfo.Value
+    elseif bindInfo.Type == "KeyCode" then
+        return input.KeyCode == bindInfo.Value
+    end
+    return false
+end
+
+-- Function to check if target is visible
+local function IsVisible(localRoot, targetHead)
+    if not localRoot or not targetHead then return false end
+    local ray = Ray.new(localRoot.Position, (targetHead.Position - localRoot.Position).Unit * 1000)
+    local ignoreList = {LocalPlayer.Character}
+    local hit, _ = Workspace:FindPartOnRayWithIgnoreList(ray, ignoreList)
+    return hit == nil or hit:IsDescendantOf(targetHead.Parent)
+end
+
+-- Function to update Esp color
+local function UpdateEspColor()
+    espColor = Color3.fromRGB(espRed, espGreen, espBlue)
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            if player.Character:FindFirstChild("ESPHighlight") then
+                player.Character.ESPHighlight.FillColor = espColor
+                player.Character.ESPHighlight.OutlineColor = espColor
+            end
+            if player.Character:FindFirstChild("Head") and player.Character.Head:FindFirstChild("NameTag") then
+                player.Character.Head.NameTag.TagLabel.TextColor3 = espColor
+            end
+            if player.Character:FindFirstChild("HumanoidRootPart") and player.Character.HumanoidRootPart:FindFirstChild("DistanceTag") then
+                player.Character.HumanoidRootPart.DistanceTag.TagLabel.TextColor3 = espColor
+            end
+        end
+    end
+end
+
+-- Capture original WalkSpeed and JumpPower
+local function CaptureOriginals(char)
+    local humanoid = char:WaitForChild("Humanoid", 10)
+    if humanoid then
+        OriginalWalkSpeed = humanoid.WalkSpeed
+        OriginalJumpPower = humanoid.JumpPower
+        OriginalJumpHeight = humanoid.JumpHeight
+        OriginalUseJumpPower = humanoid.UseJumpPower
+        CurrentWalkSpeed = math.max(CurrentWalkSpeed, OriginalWalkSpeed)
+        CurrentJumpPower = math.max(CurrentJumpPower, OriginalJumpPower)
+    end
+end
+
+if LocalPlayer.Character then
+    CaptureOriginals(LocalPlayer.Character)
+end
+
+LocalPlayer.CharacterAdded:Connect(CaptureOriginals)
+
+-- Jump Effect
+EffectManager:RegisterEffect("Jump effect", function()
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoid = char:WaitForChild("Humanoid", 10)
+    local root = char:WaitForChild("HumanoidRootPart", 10)
+    if not humanoid or not root then return end
+
+    local function CreateJumpEffect()
+        local wave = Instance.new("Part")
+        wave.Anchored = true
+        wave.CanCollide = false
+        wave.Size = Vector3.new(1, 0.2, 1)
+        wave.Transparency = 0.5
+        wave.Material = Enum.Material.Neon
+        wave.Color = RainbowColor(tick())
+        wave.Parent = workspace
+        
+        local mesh = Instance.new("CylinderMesh", wave)
+        mesh.Scale = Vector3.new(0.1, 1, 0.1)
+        
+        local startPos = root.Position - Vector3.new(0, root.Size.Y/2 + 0.1, 0)
+        wave.CFrame = CFrame.new(startPos) * CFrame.Angles(math.rad(90), 0, 0)
+        
+        local startTime = tick()
+        local waveConn = RunService.RenderStepped:Connect(function()
+            local t = tick() - startTime
+            mesh.Scale = Vector3.new(2 + t * 8, 0.05, 2 + t * 8)
+            wave.Transparency = math.clamp(0.3 + t*2, 0, 1)
+            
+            if t > 1 then
+                waveConn:Disconnect()
+                wave:Destroy()
+            end
+        end)
+        table.insert(EffectManager.Connections, waveConn)
+    end
+
+    local conn = humanoid.Jumping:Connect(CreateJumpEffect)
+    table.insert(EffectManager.Connections, conn)
+    
+    if humanoid:GetState() == Enum.HumanoidStateType.Jumping then
+        CreateJumpEffect()
+    end
+end, function()
+    for _, conn in pairs(EffectManager.Connections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    EffectManager.Connections = {}
+end)
+
+-- Visual Effects Module
+local VisualEffects = {}
+
+function VisualEffects:ClearEffectByName(name)
+    local char = LocalPlayer.Character
+    if char then
+        for _, effect in pairs(char:GetDescendants()) do
+            if effect.Name == name then
+                pcall(function() effect:Destroy() end)
+            end
+        end
+    end
+end
+
+-- Highlight Esp Module
+local HighlightEsp = {}
+local highlightEspConnection
+local highlightEspCharConns = {}
+
+function HighlightEsp:CreateHighlight(player)
+    local character = player.Character
+    if character and character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+        if EspTeamCheckEnabled and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+            return
+        end
+        local highlight = character:FindFirstChild("ESPHighlight")
+        if not highlight then
+            highlight = Instance.new("Highlight")
+            highlight.Name = "ESPHighlight"
+            highlight.FillColor = espColor
+            highlight.OutlineColor = espColor
+            highlight.FillTransparency = 0.6
+            highlight.OutlineTransparency = 0
+            highlight.Adornee = character
+            highlight.Parent = character
+        end
+    end
+end
+
+function HighlightEsp:EnableEsp()
+    if highlightEspConnection then return end
+
+    highlightEspEnabled = true
+
+    local function SetupHighlight(player)
+        if player ~= LocalPlayer and highlightEspEnabled then
+            local charConn = player.CharacterAdded:Connect(function(character)
+                task.wait(0.5)
+                if character:FindFirstChild("Humanoid") and highlightEspEnabled then
+                    HighlightEsp:CreateHighlight(player)
+                end
+            end)
+            table.insert(highlightEspCharConns, charConn)
+            if player.Character and player.Character:FindFirstChild("Humanoid") and highlightEspEnabled then
+                HighlightEsp:CreateHighlight(player)
+            end
+        end
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        SetupHighlight(player)
+    end
+
+    highlightEspConnection = Players.PlayerAdded:Connect(SetupHighlight)
+end
+
+function HighlightEsp:DisableEsp()
+    highlightEspEnabled = false
+    if highlightEspConnection then
+        pcall(function() highlightEspConnection:Disconnect() end)
+        highlightEspConnection = nil
+    end
+    for _, conn in pairs(highlightEspCharConns) do
+        pcall(function() conn:Disconnect() end)
+    end
+    highlightEspCharConns = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Character then
+            local highlight = player.Character:FindFirstChild("ESPHighlight")
+            if highlight then
+                pcall(function() highlight:Destroy() end)
+            end
+        end
+    end
+end
+
+-- Name Esp Module
+local NameEsp = {}
+local nameEspConnection
+local nameEspCharConns = {}
+
+function NameEsp:CreateNameTag(player)
+    local character = player.Character
+    if character and character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+        if EspTeamCheckEnabled and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+            return
+        end
+        local head = character:FindFirstChild("Head")
+        if head then
+            local billboard = head:FindFirstChild("NameTag")
+            if not billboard then
+                billboard = Instance.new("BillboardGui")
+                billboard.Name = "NameTag"
+                billboard.Adornee = head
+                billboard.Size = UDim2.new(0, 130, 0, espTextSize)
+                billboard.StudsOffset = Vector3.new(0, 2, 0)
+                billboard.AlwaysOnTop = true
+                billboard.Parent = head
+
+                local textLabel = Instance.new("TextLabel")
+                textLabel.Name = "TagLabel"
+                textLabel.Size = UDim2.new(1, 0, 1, 0)
+                textLabel.BackgroundTransparency = 1
+                textLabel.TextColor3 = espColor
+                textLabel.Font = Enum.Font.Cartoon
+                textLabel.TextScaled = true
+                textLabel.TextStrokeTransparency = 0.6
+                textLabel.Text = player.Name
+                textLabel.Parent = billboard
+            end
+        end
+    end
+end
+
+function NameEsp:EnableEsp()
+    if nameEspConnection then return end
+
+    nameEspEnabled = true
+
+    local function SetupName(player)
+        if player ~= LocalPlayer and nameEspEnabled then
+            local charConn = player.CharacterAdded:Connect(function(character)
+                task.wait(0.5)
+                if character:FindFirstChild("Humanoid") and nameEspEnabled then
+                    NameEsp:CreateNameTag(player)
+                end
+            end)
+            table.insert(nameEspCharConns, charConn)
+            if player.Character and player.Character:FindFirstChild("Humanoid") and nameEspEnabled then
+                NameEsp:CreateNameTag(player)
+            end
+        end
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        SetupName(player)
+    end
+
+    nameEspConnection = Players.PlayerAdded:Connect(SetupName)
+end
+
+function NameEsp:DisableEsp()
+    nameEspEnabled = false
+    if nameEspConnection then
+        pcall(function() nameEspConnection:Disconnect() end)
+        nameEspConnection = nil
+    end
+    for _, conn in pairs(nameEspCharConns) do
+        pcall(function() conn:Disconnect() end)
+    end
+    nameEspCharConns = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Character and player.Character:FindFirstChild("Head") then
+            local nameTag = player.Character.Head:FindFirstChild("NameTag")
+            if nameTag then
+                pcall(function() nameTag:Destroy() end)
+            end
+        end
+    end
+end
+
+-- Distance Esp Module
+local DistanceEsp = {}
+local distanceEspConnection
+local distanceEspCharConns = {}
+local distanceUpdateConn
+
+function DistanceEsp:CreateDistanceTag(player)
+    local character = player.Character
+    if character and character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+        if EspTeamCheckEnabled and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+            return
+        end
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if root then
+            local billboard = root:FindFirstChild("DistanceTag")
+            if not billboard then
+                billboard = Instance.new("BillboardGui")
+                billboard.Name = "DistanceTag"
+                billboard.Adornee = root
+                billboard.Size = UDim2.new(0, 130, 0, espTextSize)
+                billboard.StudsOffset = Vector3.new(0, -3.5, 0)
+                billboard.AlwaysOnTop = true
+                billboard.Parent = root
+
+                local textLabel = Instance.new("TextLabel")
+                textLabel.Name = "TagLabel"
+                textLabel.Size = UDim2.new(1, 0, 1, 0)
+                textLabel.BackgroundTransparency = 1
+                textLabel.TextColor3 = espColor
+                textLabel.Font = Enum.Font.Cartoon
+                textLabel.TextScaled = true
+                textLabel.TextStrokeTransparency = 0.6
+                textLabel.Text = ""
+                textLabel.Parent = billboard
+            end
+        end
+    end
+end
+
+function DistanceEsp:UpdateDistanceTag(player)
+    if player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 and player.Character:FindFirstChild("HumanoidRootPart") and player.Character.HumanoidRootPart:FindFirstChild("DistanceTag") then
+        local tag = player.Character.HumanoidRootPart.DistanceTag.TagLabel
+        local distance = (LocalPlayer.Character and LocalPlayer.Character.PrimaryPart and player.Character.PrimaryPart and (LocalPlayer.Character.PrimaryPart.Position - player.Character.PrimaryPart.Position).Magnitude) or 0
+        tag.Text = string.format("%.0f", distance) .. "m"
+    end
+end
+
+function DistanceEsp:EnableEsp()
+    if distanceEspConnection then return end
+
+    distanceEspEnabled = true
+
+    local function SetupDistance(player)
+        if player ~= LocalPlayer and distanceEspEnabled then
+            local charConn = player.CharacterAdded:Connect(function(character)
+                task.wait(0.5)
+                if character:FindFirstChild("Humanoid") and distanceEspEnabled then
+                    DistanceEsp:CreateDistanceTag(player)
+                end
+            end)
+            table.insert(distanceEspCharConns, charConn)
+            if player.Character and player.Character:FindFirstChild("Humanoid") and distanceEspEnabled then
+                DistanceEsp:CreateDistanceTag(player)
+            end
+        end
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        SetupDistance(player)
+    end
+
+    distanceEspConnection = Players.PlayerAdded:Connect(SetupDistance)
+
+    if distanceUpdateConn then distanceUpdateConn:Disconnect() end
+    distanceUpdateConn = RunService.Heartbeat:Connect(function()
+        if not distanceEspEnabled then
+            return
+        end
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                DistanceEsp:UpdateDistanceTag(player)
+            end
+        end
+    end)
+end
+
+function DistanceEsp:DisableEsp()
+    distanceEspEnabled = false
+    if distanceEspConnection then
+        pcall(function() distanceEspConnection:Disconnect() end)
+        distanceEspConnection = nil
+    end
+    if distanceUpdateConn then
+        pcall(function() distanceUpdateConn:Disconnect() end)
+        distanceUpdateConn = nil
+    end
+    for _, conn in pairs(distanceEspCharConns) do
+        pcall(function() conn:Disconnect() end)
+    end
+    distanceEspCharConns = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local distanceTag = player.Character.HumanoidRootPart:FindFirstChild("DistanceTag")
+            if distanceTag then
+                pcall(function() distanceTag:Destroy() end)
+            end
+        end
+    end
+end
+
+-- Aimbot Module
+local Aimbot = {}
+
+function Aimbot:ShowFov()
+    if fovCircle then
+        pcall(function() fovCircle:Destroy() end)
+    end
+    if not fovScreenGui then
+        fovScreenGui = Instance.new("ScreenGui")
+        fovScreenGui.Name = "AimbotFOV"
+        fovScreenGui.IgnoreGuiInset = true
+        fovScreenGui.Parent = CoreGui
+    end
+    fovCircle = Instance.new("Frame")
+    fovCircle.Size = UDim2.new(0, aimbotFOV * 2, 0, aimbotFOV * 2)
+    fovCircle.Position = UDim2.new(0.5, 0, 0.5, 0)
+    fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+    fovCircle.BackgroundTransparency = 1
+    fovCircle.Parent = fovScreenGui
+
+    local uiStroke = Instance.new("UIStroke")
+    uiStroke.Color = Color3.fromRGB(255, 0, 0)
+    uiStroke.Thickness = 2
+    uiStroke.Transparency = 0
+    uiStroke.Parent = fovCircle
+
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.CornerRadius = UDim.new(1, 0)
+    uiCorner.Parent = fovCircle
+end
+
+function Aimbot:HideFov()
+    if fovCircle then
+        pcall(function() fovCircle:Destroy() end)
+        fovCircle = nil
+    end
+    if fovScreenGui then
+        pcall(function() fovScreenGui:Destroy() end)
+        fovScreenGui = nil
+    end
+end
+
+function Aimbot:EnableAimbot()
+    if aimbotConnection then return end
+    
+    aimbotConnection = RunService.RenderStepped:Connect(function()
+        if not aimbotActive then
+            if aimbotConnection then
+                aimbotConnection:Disconnect()
+                aimbotConnection = nil
+            end
+            return
+        end
+        
+        local localChar = LocalPlayer.Character
+        if not localChar then return end
+        local localRoot = localChar:FindFirstChild("HumanoidRootPart")
+        if not localRoot then return end
+        
+        local camera = Workspace.CurrentCamera
+        
+        if lockedTarget and (not lockedTarget.Parent or not lockedTarget.Character) then
+            lockedTarget = nil
+        end
+        
+        if lockedTarget then
+            local char = lockedTarget.Character
+            local head = char and char:FindFirstChild("Head")
+            local humanoid = char and char:FindFirstChild("Humanoid")
+            if not char or not head or not humanoid or humanoid.Health <= 0 then
+                lockedTarget = nil
+            else
+                local isValid = true
+                if TeamCheckEnabled and lockedTarget.Team and LocalPlayer.Team and lockedTarget.Team == LocalPlayer.Team then
+                    isValid = false
+                end
+                if WallCheckEnabled and not IsVisible(localRoot, head) then
+                    isValid = false
+                end
+                if not isValid then
+                    lockedTarget = nil
+                end
+            end
+        end
+        
+        if not lockedTarget then
+            local closestPlayer = nil
+            local smallestAngle = math.rad(aimbotFOV / 2)
+            
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer then
+                    local char = plr.Character
+                    local root = char and char:FindFirstChild("HumanoidRootPart")
+                    local head = char and char:FindFirstChild("Head")
+                    local humanoid = char and char:FindFirstChild("Humanoid")
+                    if root and head and humanoid and humanoid.Health > 0 then
+                        local distance = (localRoot.Position - root.Position).Magnitude
+                        if distance <= 5000 then
+                            local screenPoint, onScreen = camera:WorldToScreenPoint(head.Position)
+                            if onScreen then
+                                local directionToTarget = (head.Position - camera.CFrame.Position).Unit
+                                local cameraDirection = camera.CFrame.LookVector
+                                local angle = math.acos(directionToTarget:Dot(cameraDirection))
+                                if angle <= smallestAngle then
+                                    local isValid = true
+                                    if TeamCheckEnabled and plr.Team and LocalPlayer.Team and plr.Team == LocalPlayer.Team then
+                                        isValid = false
+                                    end
+                                    if WallCheckEnabled and not IsVisible(localRoot, head) then
+                                        isValid = false
+                                    end
+                                    if isValid then
+                                        smallestAngle = angle
+                                        closestPlayer = plr
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            
+            lockedTarget = closestPlayer
+        end
+        
+        if lockedTarget and lockedTarget.Character then
+            local targetHead = lockedTarget.Character:FindFirstChild("Head")
+            if targetHead then
+                camera.CFrame = CFrame.new(camera.CFrame.Position, targetHead.Position)
+            else
+                lockedTarget = nil
+            end
+        end
+    end)
+end
+
+function Aimbot:DisableAimbot()
+    if aimbotConnection then
+        pcall(function() aimbotConnection:Disconnect() end)
+        aimbotConnection = nil
+    end
+    lockedTarget = nil
+end
+
+-- Spinbot Module
+local Spinbot = {}
+
+function Spinbot:EnableSpinbot()
+    if spinbotConnection then return end
+    
+    spinbotConnection = RunService.RenderStepped:Connect(function()
+        if not SpinbotEnabled then
+            if spinbotConnection then
+                spinbotConnection:Disconnect()
+                spinbotConnection = nil
+            end
+            return
+        end
+        
+        local char = LocalPlayer.Character
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        
+        root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(SpinbotSpeed * 10), 0)
+    end)
+end
+
+function Spinbot:DisableSpinbot()
+    if spinbotConnection then
+        pcall(function() spinbotConnection:Disconnect() end)
+        spinbotConnection = nil
+    end
+end
+
+-- TeamCheck Module
+local TeamCheck = {}
+
+function TeamCheck:EnableTeamCheck()
+    if teamCheckConnection then return end
+    
+    teamCheckConnection = RunService.RenderStepped:Connect(function()
+        if not TeamCheckEnabled then
+            if teamCheckConnection then
+                teamCheckConnection:Disconnect()
+                teamCheckConnection = nil
+            end
+            return
+        end
+        
+        local localChar = LocalPlayer.Character
+        if not localChar then return end
+        local localRoot = localChar:FindFirstChild("HumanoidRootPart")
+        if not localRoot then return end
+        
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Team and LocalPlayer.Team and plr.Team == LocalPlayer.Team then
+                local char = plr.Character
+                if char and char:FindFirstChild("Humanoid") then
+                    local highlight = char:FindFirstChild("TeamCheckHighlight")
+                    if not highlight then
+                        highlight = Instance.new("Highlight")
+                        highlight.Name = "TeamCheckHighlight"
+                        highlight.Adornee = char
+                        highlight.FillColor = Color3.fromRGB(0, 255, 0)
+                        highlight.FillTransparency = 0.7
+                        highlight.OutlineColor = Color3.fromRGB(0, 255, 0)
+                        highlight.OutlineTransparency = 0
+                        highlight.Parent = char
+                    end
+                end
+            end
+        end
+    end)
+end
+
+function TeamCheck:DisableTeamCheck()
+    if teamCheckConnection then
+        pcall(function() teamCheckConnection:Disconnect() end)
+        teamCheckConnection = nil
+    end
+    for _, plr in pairs(Players:GetPlayers()) do
+        local char = plr.Character
+        if char then
+            local highlight = char:FindFirstChild("TeamCheckHighlight")
+            if highlight then
+                pcall(function() highlight:Destroy() end)
+            end
+        end
+    end
+end
+
+-- WallCheck Module
+local WallCheck = {}
+
+function WallCheck:EnableWallCheck()
+    if wallCheckConnection then return end
+    
+    wallCheckConnection = RunService.RenderStepped:Connect(function()
+        if not WallCheckEnabled then
+            if wallCheckConnection then
+                wallCheckConnection:Disconnect()
+                wallCheckConnection = nil
+            end
+            return
+        end
+    end)
+end
+
+function WallCheck:DisableWallCheck()
+    if wallCheckConnection then
+        pcall(function() wallCheckConnection:Disconnect() end)
+        wallCheckConnection = nil
+    end
+end
+
+-- Cleanup function
+local function CleanupAll()
+    EffectManager:ClearVisual()
+    VisualEffects:ClearEffectByName("FireAura")
+    VisualEffects:ClearEffectByName("SmokeTrail")
+    VisualEffects:ClearEffectByName("BodySparkles")
+    VisualEffects:ClearEffectByName("ColorShift")
+    VisualEffects:ClearEffectByName("NeonGlow")
+    VisualEffects:ClearEffectByName("StarTrail")
+    
+    InfiniteJumpEnabled = false
+    NoclipEnabled = false
+    FlyEnabled = false
+    aimbotEnabled = false
+    aimbotActive = false
+    lockedTarget = nil
+    SpinbotEnabled = false
+    TeamCheckEnabled = false
+    WallCheckEnabled = false
+
+    if speedConnection then
+        pcall(function() speedConnection:Disconnect() end)
+        speedConnection = nil
+    end
+    if jumpConnection then
+        pcall(function() jumpConnection:Disconnect() end)
+        jumpConnection = nil
+    end
+    if noclipConnection then
+        pcall(function() noclipConnection:Disconnect() end)
+        noclipConnection = nil
+    end
+    if flyConnection then
+        pcall(function() flyConnection:Disconnect() end)
+        flyConnection = nil
+    end
+    if flyBodyVelocity then
+        pcall(function() flyBodyVelocity:Destroy() end)
+        flyBodyVelocity = nil
+    end
+    if trailsCharConn then
+        pcall(function() trailsCharConn:Disconnect() end)
+        trailsCharConn = nil
+    end
+    if particlesCharConn then
+        pcall(function() particlesCharConn:Disconnect() end)
+        particlesCharConn = nil
+    end
+    if chinaHatConn then
+        pcall(function() chinaHatConn:Disconnect() end)
+        chinaHatConn = nil
+    end
+    if starTrailConn then
+        pcall(function() starTrailConn:Disconnect() end)
+        starTrailConn = nil
+    end
+    if rainbowConnection then
+        pcall(function() rainbowConnection:Disconnect() end)
+        rainbowConnection = nil
+    end
+    if spinbotConnection then
+        pcall(function() spinbotConnection:Disconnect() end)
+        spinbotConnection = nil
+    end
+    if teamCheckConnection then
+        pcall(function() teamCheckConnection:Disconnect() end)
+        teamCheckConnection = nil
+    end
+    if wallCheckConnection then
+        pcall(function() wallCheckConnection:Disconnect() end)
+        wallCheckConnection = nil
+    end
+    if aimbotConnection then
+        pcall(function() aimbotConnection:Disconnect() end)
+        aimbotConnection = nil
+    end
+
+    if chinaHat then
+        pcall(function() chinaHat:Destroy() end)
+        chinaHat = nil
+    end
+    if particleEmitter then
+        pcall(function() particleEmitter:Destroy() end)
+        particleEmitter = nil
+    end
+    if starTrailEmitter then
+        pcall(function() starTrailEmitter:Destroy() end)
+        starTrailEmitter = nil
+    end
+    trails = {}
+    rainbowUpdaters = {}
+    
+    HighlightEsp:DisableEsp()
+    NameEsp:DisableEsp()
+    DistanceEsp:DisableEsp()
+    
+    Aimbot:DisableAimbot()
+    Aimbot:HideFov()
+    Spinbot:DisableSpinbot()
+    TeamCheck:DisableTeamCheck()
+    WallCheck:DisableWallCheck()
+    
+    local char = LocalPlayer.Character
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = OriginalWalkSpeed
+            humanoid.UseJumpPower = OriginalUseJumpPower
+            if OriginalUseJumpPower then
+                humanoid.JumpPower = OriginalJumpPower
+            else
+                humanoid.JumpHeight = OriginalJumpHeight
+            end
+        end
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+            if part.Name == "FireAura" or part.Name == "SmokeTrail" or part.Name == "BodySparkles" or part.Name == "ColorShift" or part.Name == "NeonGlow" or part.Name == "StarTrail" then
+                pcall(function() part:Destroy() end)
+            end
+        end
+    end
+    
+    espTextSize = 25
+    espColor = Color3.fromRGB(255, 255, 255)
+    espRed = 255
+    espGreen = 255
+    espBlue = 255
+    ContextActionService:UnbindAction("FlyMobile")
+end
+
+-- Define tabs
+local Tabs = {
+    Visual = Window:Tab({ Title = "Visual", Icon = "palette" }),
+    Player = Window:Tab({ Title = "Player", Icon = "user" }),
+    Wallhack = Window:Tab({ Title = "Wallhack", Icon = "eye" }),
+    Aimbot = Window:Tab({ Title = "Aimbot", Icon = "sword" }),
+    Movement = Window:Tab({ Title = "Movement", Icon = "zap" }),
+    Troll = Window:Tab({ Title = "Troll", Icon = "smile" }),
+    Settings = Window:Tab({ Title = "Settings", Icon = "settings" }),
+    Themes = Window:Tab({ Title = "Themes", Icon = "palette" })
+}
+
+-- Define sections
+local VisualEffectsSection = Tabs.Visual:Section({ Title = "Visual Effects" })
+local ClearVisualSection = Tabs.Visual:Section({ Title = "Clear Visuals" })
+local PlayerModsSection = Tabs.Player:Section({ Title = "Player Mods" })
+local EspSection = Tabs.Wallhack:Section({ Title = "Player Esp" })
+local SizeEspSection = Tabs.Wallhack:Section({ Title = "Size Esp" })
+local ColorEspSection = Tabs.Wallhack:Section({ Title = "Settings Color Esp" })
+local AimbotSection = Tabs.Aimbot:Section({ Title = "Aimbot" })
+local MovementSection = Tabs.Movement:Section({ Title = "Movement" })
+local TrollGuiSection = Tabs.Troll:Section({ Title = "Troll Gui" })
+local SettingsUiSection = Tabs.Settings:Section({ Title = "Ui Settings" })
+local ThemesSection = Tabs.Themes:Section({ Title = "Theme Selector" })
+
+-- Expand all sections
+task.spawn(function()
+    task.wait(0.1)
+    local CoreGui = game:GetService("CoreGui")
+    local screenGui = CoreGui:FindFirstChild("WindUI")
+    if not screenGui then return end
+
+    for _, frame in pairs(screenGui:GetDescendants()) do
+        if frame:IsA("Frame") and frame.Name:match("Section") then
+            for _, child in pairs(frame:GetChildren()) do
+                if child:IsA("Frame") and child.Visible == false then
+                    child.Visible = true
+                end
+            end
+        end
+    end
+end)
+
+-- Troll GUI toggle
+TrollGuiSection:Toggle({
+    Title = "Troll Gui",
+    Desc = "Enable/Disable Troll Gui",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            if state then
+                if not trollGuiLoaded then
+                    loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-Fling-Gui-Op-47914"))()
+                    trollGuiLoaded = true
+                end
+            else
+                local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+                local Gui = PlayerGui:FindFirstChild("SuperFlingGui")
+                if Gui then
+                    Gui:Destroy()
+                end
+                trollGuiLoaded = false
+            end
+        end)
+        if not success then
+            warn("Troll Gui toggle failed: " .. tostring(err))
+        end
+    end
+})
+
+-- Combat toggles, sliders, and dropdowns
+local toggles = {}
+
+local aimbotToggle = AimbotSection:Toggle({
+    Title = "Aimbot",
+    Desc = "Enable aimbot feature",
+    Value = false,
+    Callback = function(state)
+        aimbotEnabled = state
+        if state then
+            Aimbot:ShowFov()
+            if aimbotMode == "Toggle" and aimbotActive then
+                Aimbot:EnableAimbot()
+            end
+        else
+            Aimbot:DisableAimbot()
+            Aimbot:HideFov()
+            aimbotActive = false
+        end
+    end
+})
+toggles.Aimbot = aimbotToggle
+
+AimbotSection:Dropdown({
+    Title = "Aimbot Bind",
+    Desc = "Select bind for aimbot",
+    Values = {
+        "MB1", "MB2", "MB3", "Q", "E", "R", "T", "Y", "U", "I", "O", "P",
+        "F", "G", "H", "J", "K", "L", "Z", "X", "C", "V", "B", "N", "M",
+        "One", "Two", "Three", "Four", "Five", "LShift", "RShift", "LCtrl",
+        "RCtrl", "LAlt", "RAlt"
+    },
+    Value = "MB2",
+    Callback = function(value)
+        aimbotBind = value
+    end
+})
+
+AimbotSection:Dropdown({
+    Title = "Aimbot Mode",
+    Desc = "Select aimbot mode",
+    Values = {"Hold", "Toggle"},
+    Value = "Hold",
+    Callback = function(value)
+        aimbotMode = value
+        if aimbotMode == "Hold" then
+            aimbotActive = false
+            Aimbot:DisableAimbot()
+            lockedTarget = nil
+        end
+    end
+})
+
+AimbotSection:Slider({
+    Title = "Aimbot Fov",
+    Desc = "Set aimbot FOV (10-500)",
+    Value = { Min = 10, Max = 500, Default = 200 },
+    Callback = function(value)
+        aimbotFOV = value
+        if fovCircle and fovCircle.Parent then
+            fovCircle.Size = UDim2.new(0, aimbotFOV * 2, 0, aimbotFOV * 2)
+        end
+    end
+})
+
+local teamCheckToggle = AimbotSection:Toggle({
+    Title = "Team Check",
+    Desc = "Enable team check",
+    Value = false,
+    Callback = function(state)
+        TeamCheckEnabled = state
+        if state then
+            TeamCheck:EnableTeamCheck()
+        else
+            TeamCheck:DisableTeamCheck()
+        end
+    end
+})
+toggles.TeamCheck = teamCheckToggle
+
+local wallCheckToggle = AimbotSection:Toggle({
+    Title = "Wall Check",
+    Desc = "Enable wall check",
+    Value = false,
+    Callback = function(state)
+        WallCheckEnabled = state
+        if state then
+            WallCheck:EnableWallCheck()
+        else
+            WallCheck:DisableWallCheck()
+        end
+    end
+})
+toggles.WallCheck = wallCheckToggle
+
+local spinbotToggle = MovementSection:Toggle({
+    Title = "Spinbot",
+    Desc = "Enable spinbot",
+    Value = false,
+    Callback = function(state)
+        SpinbotEnabled = state
+        if state then
+            Spinbot:EnableSpinbot()
+        else
+            Spinbot:DisableSpinbot()
+        end
+    end
+})
+toggles.Spinbot = spinbotToggle
+
+MovementSection:Slider({
+    Title = "Spinbot Speed",
+    Desc = "Set spinbot speed (1-30)",
+    Value = { Min = 1, Max = 30, Default = 10 },
+    Callback = function(value)
+        SpinbotSpeed = value
+    end
+})
+
+UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
+    if gameProcessedEvent then return end
+    if IsMatchingInput(input) and aimbotEnabled then
+        if aimbotMode == "Hold" then
+            aimbotActive = true
+            lockedTarget = nil
+            Aimbot:EnableAimbot()
+        elseif aimbotMode == "Toggle" then
+            aimbotActive = not aimbotActive
+            if aimbotActive then
+                lockedTarget = nil
+                Aimbot:EnableAimbot()
+            else
+                Aimbot:DisableAimbot()
+            end
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if aimbotMode == "Hold" and IsMatchingInput(input) and aimbotEnabled then
+        aimbotActive = false
+        Aimbot:DisableAimbot()
+        lockedTarget = nil
+    end
+end)
+
+local highlightEspToggle = EspSection:Toggle({
+    Title = "Highlight Esp",
+    Desc = "Enable highlight Esp",
+    Value = false,
+    Callback = function(state)
+        highlightEspEnabled = state
+        if state then
+            HighlightEsp:EnableEsp()
+        else
+            HighlightEsp:DisableEsp()
+        end
+    end
+})
+toggles.HighlightESP = highlightEspToggle
+
+local nameEspToggle = EspSection:Toggle({
+    Title = "Name Esp",
+    Desc = "Enable name Esp",
+    Value = false,
+    Callback = function(state)
+        nameEspEnabled = state
+        if state then
+            NameEsp:EnableEsp()
+        else
+            NameEsp:DisableEsp()
+        end
+    end
+})
+toggles.NameESP = nameEspToggle
+
+local distanceEspToggle = EspSection:Toggle({
+    Title = "Distance Esp",
+    Desc = "Enable distance Esp",
+    Value = false,
+    Callback = function(state)
+        distanceEspEnabled = state
+        if state then
+            DistanceEsp:EnableEsp()
+        else
+            DistanceEsp:DisableEsp()
+        end
+    end
+})
+toggles.DistanceESP = distanceEspToggle
+
+local espTeamCheckToggle = EspSection:Toggle({
+    Title = "Team Check",
+    Desc = "Do not highlight teammates",
+    Value = false,
+    Callback = function(state)
+        EspTeamCheckEnabled = state
+        if highlightEspEnabled then
+            HighlightEsp:DisableEsp()
+            HighlightEsp:EnableEsp()
+        end
+        if nameEspEnabled then
+            NameEsp:DisableEsp()
+            NameEsp:EnableEsp()
+        end
+        if distanceEspEnabled then
+            DistanceEsp:DisableEsp()
+            DistanceEsp:EnableEsp()
+        end
+    end
+})
+toggles.EspTeamCheck = espTeamCheckToggle
+
+SizeEspSection:Slider({
+    Title = "Size Esp",
+    Desc = "Set Esp text size (10-50)",
+    Value = { Min = 10, Max = 50, Default = 25 },
+    Callback = function(value)
+        espTextSize = value
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                if player.Character:FindFirstChild("Head") and player.Character.Head:FindFirstChild("NameTag") then
+                    player.Character.Head.NameTag.Size = UDim2.new(0, 130, 0, espTextSize)
+                end
+                if player.Character:FindFirstChild("HumanoidRootPart") and player.Character.HumanoidRootPart:FindFirstChild("DistanceTag") then
+                    player.Character.HumanoidRootPart.DistanceTag.Size = UDim2.new(0, 130, 0, espTextSize)
+                end
+            end
+        end
+    end
+})
+
+ColorEspSection:Slider({
+    Title = "Red Esp",
+    Desc = "Set red color component (0-255)",
+    Value = { Min = 0, Max = 255, Default = 255 },
+    Callback = function(value)
+        espRed = value
+        UpdateEspColor()
+    end
+})
+
+ColorEspSection:Slider({
+    Title = "Green Esp",
+    Desc = "Set green color component (0-255)",
+    Value = { Min = 0, Max = 255, Default = 255 },
+    Callback = function(value)
+        espGreen = value
+        UpdateEspColor()
+    end
+})
+
+ColorEspSection:Slider({
+    Title = "Blue Esp",
+    Desc = "Set blue color component (0-255)",
+    Value = { Min = 0, Max = 255, Default = 255 },
+    Callback = function(value)
+        espBlue = value
+        UpdateEspColor()
+    end
+})
+
+local chinaHatToggle = VisualEffectsSection:Toggle({
+    Title = "China Hat",
+    Desc = "Enable China hat effect",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            if state then
+                local function AddChinaHat(char)
+                    local head = char:FindFirstChild("Head")
+                    if not head then return end
+                    if chinaHat then
+                        pcall(function() chinaHat:Destroy() end)
+                    end
+                    chinaHat = Instance.new("Part")
+                    chinaHat.Name = "ChinaHat"
+                    chinaHat.Size = Vector3.new(3, 0.3, 3)
+                    chinaHat.Anchored = true
+                    chinaHat.CanCollide = false
+                    chinaHat.Transparency = 0.3
+                    chinaHat.Material = Enum.Material.Neon
+                    chinaHat.Color = RainbowColor(tick())
+                    chinaHat.Parent = workspace
+                    
+                    local mesh = Instance.new("SpecialMesh", chinaHat)
+                    mesh.MeshType = Enum.MeshType.FileMesh
+                    mesh.MeshId = "rbxassetid://1033714"
+                    mesh.Scale = Vector3.new(3, 1, 3)
+                    
+                    local updateConn
+                    updateConn = RunService.RenderStepped:Connect(function()
+                        if not chinaHatToggle.Value or not chinaHat or not chinaHat.Parent or not head or not head.Parent then
+                            if updateConn then
+                                updateConn:Disconnect()
+                            end
+                            if chinaHat then
+                                pcall(function() chinaHat:Destroy() end)
+                                chinaHat = nil
+                            end
+                            rainbowUpdaters["ChinaHat"] = nil
+                            StopRainbowLoop()
+                            return
+                        end
+                        chinaHat.Color = RainbowColor(tick())
+                        chinaHat.CFrame = head.CFrame * CFrame.new(0, 2.5, 0) * CFrame.Angles(0, math.rad(tick() * 20), 0)
+                    end)
+                    
+                    rainbowUpdaters["ChinaHat"] = function(t)
+                        if chinaHat and chinaHat.Parent then
+                            chinaHat.Color = RainbowColor(t)
+                        end
+                    end
+                    StartRainbowLoop()
+                end
+                
+                local char = LocalPlayer.Character
+                if char then
+                    AddChinaHat(char)
+                end
+                
+                if not chinaHatConn then
+                    chinaHatConn = LocalPlayer.CharacterAdded:Connect(function(newChar)
+                        task.wait(1)
+                        AddChinaHat(newChar)
+                    end)
+                end
+            else
+                if chinaHatConn then
+                    chinaHatConn:Disconnect()
+                    chinaHatConn = nil
+                end
+                if chinaHat then
+                    pcall(function() chinaHat:Destroy() end)
+                    chinaHat = nil
+                end
+                rainbowUpdaters["ChinaHat"] = nil
+                StopRainbowLoop()
+            end
+        end)
+        if not success then
+            warn("China Hat toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.ChinaHat = chinaHatToggle
+
+local trailsToggle = VisualEffectsSection:Toggle({
+    Title = "Rainbow Trails",
+    Desc = "Enable rainbow trails effect",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            if state then
+                local function AddTrails(char)
+                    trails = {}
+                    for _, part in pairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") and (part.Name:match("Hand") or part.Name:match("Arm")) then
+                            for _, child in pairs(part:GetChildren()) do
+                                if child:IsA("Attachment") and (child.Name == "TrailAttachment0" or child.Name == "TrailAttachment1") or child:IsA("Trail") then
+                                    pcall(function() child:Destroy() end)
+                                end
+                            end
+                            
+                            local att0 = Instance.new("Attachment", part)
+                            att0.Name = "TrailAttachment0"
+                            local att1 = Instance.new("Attachment", part)
+                            att1.Name = "TrailAttachment1"
+                            att1.Position = Vector3.new(0, -0.5, 0)
+                            
+                            local trail = Instance.new("Trail")
+                            trail.Name = "RainbowTrail"
+                            trail.Attachment0 = att0
+                            trail.Attachment1 = att1
+                            trail.Lifetime = 0.5
+                            trail.WidthScale = NumberSequence.new(0.5)
+                            trail.Transparency = NumberSequence.new(0)
+                            trail.Color = ColorSequence.new({
+                                ColorSequenceKeypoint.new(0, RainbowColor(tick())),
+                                ColorSequenceKeypoint.new(0.5, RainbowColor(tick() + 2*math.pi/3)),
+                                ColorSequenceKeypoint.new(1, RainbowColor(tick() + 4*math.pi/3))
+                            })
+                            trail.Parent = part
+                            
+                            table.insert(trails, trail)
+                        end
+                    end
+                end
+                
+                local char = LocalPlayer.Character
+                if char then
+                    AddTrails(char)
+                end
+                
+                if not trailsCharConn then
+                    trailsCharConn = LocalPlayer.CharacterAdded:Connect(function(newChar)
+                        task.wait(1)
+                        AddTrails(newChar)
+                    end)
+                end
+                
+                rainbowUpdaters["Trails"] = function(t)
+                    local color1 = RainbowColor(t)
+                    local color2 = RainbowColor(t + 2*math.pi/3)
+                    local color3 = RainbowColor(t + 4*math.pi/3)
+                    for _, tr in ipairs(trails) do
+                        if tr and tr.Parent then
+                            tr.Color = ColorSequence.new({
+                                ColorSequenceKeypoint.new(0, color1),
+                                ColorSequenceKeypoint.new(0.5, color2),
+                                ColorSequenceKeypoint.new(1, color3)
+                            })
+                        else
+                            for i = #trails, 1, -1 do
+                                if not trails[i] or not trails[i].Parent then
+                                    table.remove(trails, i)
+                                end
+                            end
+                        end
+                    end
+                end
+                StartRainbowLoop()
+            else
+                if trailsCharConn then
+                    trailsCharConn:Disconnect()
+                    trailsCharConn = nil
+                end
+                local char = LocalPlayer.Character
+                if char then
+                    for _, part in pairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            for _, child in pairs(part:GetChildren()) do
+                                if child.Name == "RainbowTrail" or child.Name == "TrailAttachment0" or child.Name == "TrailAttachment1" then
+                                    pcall(function() child:Destroy() end)
+                                end
+                            end
+                        end
+                    end
+                end
+                trails = {}
+                rainbowUpdaters["Trails"] = nil
+                StopRainbowLoop()
+            end
+        end)
+        if not success then
+            warn("Rainbow Trails toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.Trails = trailsToggle
+
+local jumpEffectToggle = VisualEffectsSection:Toggle({
+    Title = "Jump Effect",
+    Desc = "Enable jump effect",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            if state then 
+                EffectManager:EnableEffect("Jump effect")
+            else 
+                EffectManager:DisableEffect("Jump effect")
+            end
+        end)
+        if not success then
+            warn("Jump Effect toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.JumpEffect = jumpEffectToggle
+
+local particlesToggle = VisualEffectsSection:Toggle({
+    Title = "Floating Particles",
+    Desc = "Enable floating particles effect",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            if state then
+                local function AddParticles(char)
+                    local head = char:FindFirstChild("Head")
+                    if not head then return end
+                    if particleEmitter then
+                        pcall(function() particleEmitter:Destroy() end)
+                    end
+                    particleEmitter = Instance.new("ParticleEmitter")
+                    particleEmitter.Parent = head
+                    particleEmitter.Size = NumberSequence.new(0.5)
+                    particleEmitter.Transparency = NumberSequence.new(0.5)
+                    particleEmitter.Lifetime = NumberRange.new(2)
+                    particleEmitter.Rate = 20
+                    particleEmitter.Speed = NumberRange.new(2)
+                    particleEmitter.VelocitySpread = 180
+                    particleEmitter.Rotation = NumberRange.new(0, 360)
+                    particleEmitter.Enabled = true
+                end
+                
+                local char = LocalPlayer.Character
+                if char then
+                    AddParticles(char)
+                end
+                
+                if not particlesCharConn then
+                    particlesCharConn = LocalPlayer.CharacterAdded:Connect(function(newChar)
+                        task.wait(1)
+                        AddParticles(newChar)
+                    end)
+                end
+                
+                rainbowUpdaters["Particles"] = function(t)
+                    local color1 = RainbowColor(t)
+                    local color2 = RainbowColor(t + 2*math.pi/3)
+                    local color3 = RainbowColor(t + 4*math.pi/3)
+                    if particleEmitter and particleEmitter.Parent then
+                        particleEmitter.Color = ColorSequence.new({
+                            ColorSequenceKeypoint.new(0, color1),
+                            ColorSequenceKeypoint.new(0.5, color2),
+                            ColorSequenceKeypoint.new(1, color3)
+                        })
+                    end
+                end
+                StartRainbowLoop()
+            else
+                if particlesCharConn then
+                    particlesCharConn:Disconnect()
+                    particlesCharConn = nil
+                end
+                if particleEmitter then
+                    pcall(function() particleEmitter:Destroy() end)
+                    particleEmitter = nil
+                end
+                rainbowUpdaters["Particles"] = nil
+                StopRainbowLoop()
+            end
+        end)
+        if not success then
+            warn("Floating Particles toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.Particles = particlesToggle
+
+local neonGlowToggle = VisualEffectsSection:Toggle({
+    Title = "Neon Glow",
+    Desc = "Enable neon glow effect",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            if state then
+                VisualEffects:NeonGlow()
+                local char = LocalPlayer.Character
+                if char then
+                    VisualEffects:NeonGlow()
+                end
+                if not starTrailConn then
+                    starTrailConn = LocalPlayer.CharacterAdded:Connect(function(newChar)
+                        task.wait(1)
+                        VisualEffects:NeonGlow()
+                    end)
+                end
+            else
+                if starTrailConn then
+                    starTrailConn:Disconnect()
+                    starTrailConn = nil
+                end
+                VisualEffects:ClearEffectByName("NeonGlow")
+                rainbowUpdaters["NeonGlow"] = nil
+                StopRainbowLoop()
+            end
+        end)
+        if not success then
+            warn("Neon Glow toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.NeonGlow = neonGlowToggle
+
+local starTrailToggle = VisualEffectsSection:Toggle({
+    Title = "Star Trail",
+    Desc = "Enable star trail effect",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            if state then
+                VisualEffects:StarTrail()
+                local char = LocalPlayer.Character
+                if char then
+                    VisualEffects:StarTrail()
+                end
+                if not starTrailConn then
+                    starTrailConn = LocalPlayer.CharacterAdded:Connect(function(newChar)
+                        task.wait(1)
+                        VisualEffects:StarTrail()
+                    end)
+                end
+            else
+                if starTrailConn then
+                    starTrailConn:Disconnect()
+                    starTrailConn = nil
+                end
+                VisualEffects:ClearEffectByName("StarTrail")
+                if starTrailEmitter then
+                    pcall(function() starTrailEmitter:Destroy() end)
+                    starTrailEmitter = nil
+                end
+                rainbowUpdaters["StarTrail"] = nil
+                StopRainbowLoop()
+            end
+        end)
+        if not success then
+            warn("Star Trail toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.StarTrail = starTrailToggle
+
+local fireAuraToggle = VisualEffectsSection:Toggle({
+    Title = "Fire Aura",
+    Desc = "Enable fire aura effect",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            if state then 
+                VisualEffects:FireAura()
+            else 
+                VisualEffects:ClearEffectByName("FireAura")
+            end
+        end)
+        if not success then
+            warn("Fire Aura toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.FireAura = fireAuraToggle
+
+local smokeTrailToggle = VisualEffectsSection:Toggle({
+    Title = "Smoke Trail",
+    Desc = "Enable smoke trail effect",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            if state then 
+                VisualEffects:SmokeTrail()
+            else 
+                VisualEffects:ClearEffectByName("SmokeTrail")
+            end
+        end)
+        if not success then
+            warn("Smoke Trail toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.SmokeTrail = smokeTrailToggle
+
+local sparkleBodyToggle = VisualEffectsSection:Toggle({
+    Title = "Body Sparkles",
+    Desc = "Enable body sparkles effect",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            if state then 
+                VisualEffects:SparkleBody()
+            else 
+                VisualEffects:ClearEffectByName("BodySparkles")
+            end
+        end)
+        if not success then
+            warn("Body Sparkles toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.SparkleBody = sparkleBodyToggle
+
+local colorShiftToggle = VisualEffectsSection:Toggle({
+    Title = "Color Shift",
+    Desc = "Enable color shift effect",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            if state then 
+                VisualEffects:ColorShift()
+            else 
+                VisualEffects:ClearEffectByName("ColorShift")
+            end
+        end)
+        if not success then
+            warn("Color Shift toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.ColorShift = colorShiftToggle
+
+ClearVisualSection:Button({
+    Title = "Clear",
+    Desc = "Clear all visuals",
+    Icon = "trash-2",
+    Callback = function()
+        local success, err = pcall(function()
+            EffectManager:ClearVisual()
+            for name, toggle in pairs(toggles) do
+                if name:match("ChinaHat") or name:match("Trails") or name:match("JumpEffect") or name:match("Particles") or name:match("NeonGlow") or name:match("StarTrail") or name:match("FireAura") or name:match("SmokeTrail") or name:match("SparkleBody") or name:match("ColorShift") then
+                    toggle:Set(false)
+                end
+            end
+        end)
+        if not success then
+            warn("Clear visuals button failed: " .. tostring(err))
+        end
+    end
+})
+
+local speedToggle = PlayerModsSection:Toggle({
+    Title = "Speed",
+    Desc = "Enable speed hack",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            if state then
+                if not speedConnection then
+                    speedConnection = RunService.Heartbeat:Connect(function()
+                        local char = LocalPlayer.Character
+                        local humanoid = char and char:FindFirstChild("Humanoid")
+                        if humanoid then
+                            humanoid.WalkSpeed = CurrentWalkSpeed
+                        end
+                    end)
+                end
+            else
+                if speedConnection then
+                    speedConnection:Disconnect()
+                    speedConnection = nil
+                end
+                local char = LocalPlayer.Character
+                local humanoid = char and char:FindFirstChild("Humanoid")
+                if humanoid then
+                    humanoid.WalkSpeed = OriginalWalkSpeed
+                end
+            end
+        end)
+        if not success then
+            warn("Speed toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.Speed = speedToggle
+
+PlayerModsSection:Slider({
+    Title = "Speed Changer",
+    Desc = "Set walk speed (16-200)",
+    Value = { Min = 16, Max = 200, Default = 16 },
+    Callback = function(value)
+        local success, err = pcall(function()
+            CurrentWalkSpeed = value
+            if speedToggle.Value then
+                local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+                if humanoid then
+                    humanoid.WalkSpeed = CurrentWalkSpeed
+                end
+            end
+        end)
+        if not success then
+            warn("Speed Changer slider failed: " .. tostring(err))
+        end
+    end
+})
+
+local jumpToggle = PlayerModsSection:Toggle({
+    Title = "Jump",
+    Desc = "Enable jump power hack",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            if state then
+                if not jumpConnection then
+                    jumpConnection = RunService.Heartbeat:Connect(function()
+                        local char = LocalPlayer.Character
+                        local humanoid = char and char:FindFirstChild("Humanoid")
+                        if humanoid then
+                            humanoid.UseJumpPower = true
+                            humanoid.JumpPower = CurrentJumpPower
+                        end
+                    end)
+                end
+            else
+                if jumpConnection then
+                    jumpConnection:Disconnect()
+                    jumpConnection = nil
+                end
+                local char = LocalPlayer.Character
+                local humanoid = char and char:FindFirstChild("Humanoid")
+                if humanoid then
+                    humanoid.UseJumpPower = OriginalUseJumpPower
+                    if OriginalUseJumpPower then
+                        humanoid.JumpPower = OriginalJumpPower
+                    else
+                        humanoid.JumpHeight = OriginalJumpHeight
+                    end
+                end
+            end
+        end)
+        if not success then
+            warn("Jump toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.Jump = jumpToggle
+
+PlayerModsSection:Slider({
+    Title = "Jump Changer",
+    Desc = "Set jump power (50-300)",
+    Value = { Min = 50, Max = 300, Default = 50 },
+    Callback = function(value)
+        local success, err = pcall(function()
+            CurrentJumpPower = value
+            if jumpToggle.Value then
+                local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+                if humanoid then
+                    humanoid.JumpPower = CurrentJumpPower
+                end
+            end
+        end)
+        if not success then
+            warn("Jump Changer slider failed: " .. tostring(err))
+        end
+    end
+})
+
+local infiniteJumpToggle = PlayerModsSection:Toggle({
+    Title = "Infinite Jump",
+    Desc = "Enable infinite jump",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            InfiniteJumpEnabled = state
+        end)
+        if not success then
+            warn("Infinite Jump toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.InfiniteJump = infiniteJumpToggle
+
+local noclipToggle = PlayerModsSection:Toggle({
+    Title = "Noclip",
+    Desc = "Enable noclip (pass through walls)",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            NoclipEnabled = state
+            if state then
+                if not noclipConnection then
+                    noclipConnection = RunService.Stepped:Connect(function()
+                        if not NoclipEnabled then return end
+                        local char = LocalPlayer.Character
+                        if not char then return end
+                        for _, part in pairs(char:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                part.CanCollide = false
+                            end
+                        end
+                    end)
+                end
+            else
+                if noclipConnection then
+                    pcall(function() noclipConnection:Disconnect() end)
+                    noclipConnection = nil
+                end
+                local char = LocalPlayer.Character
+                if char then
+                    for _, part in pairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            part.CanCollide = true
+                        end
+                    end
+                end
+            end
+        end)
+        if not success then
+            warn("Noclip toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.Noclip = noclipToggle
+
+local flyToggle = PlayerModsSection:Toggle({
+    Title = "Fly",
+    Desc = "Enable fly (WASD or touch to move)",
+    Value = false,
+    Callback = function(state)
+        local success, err = pcall(function()
+            FlyEnabled = state
+            if state then
+                if not flyConnection then
+                    flyConnection = RunService.Heartbeat:Connect(function()
+                        if not FlyEnabled then return end
+                        local char = LocalPlayer.Character
+                        if not char then return end
+                        local root = char:FindFirstChild("HumanoidRootPart")
+                        local humanoid = char:FindFirstChild("Humanoid")
+                        if not root or not humanoid then return end
+
+                        if not flyBodyVelocity then
+                            flyBodyVelocity = Instance.new("BodyVelocity")
+                            flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                            flyBodyVelocity.Parent = root
+                        end
+
+                        local camera = Workspace.CurrentCamera
+                        local moveDirection = humanoid.MoveDirection
+                        local velocity = Vector3.new(0, 0, 0)
+
+                        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                            velocity = velocity + Vector3.new(0, FlySpeed, 0)
+                        end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+                            velocity = velocity - Vector3.new(0, FlySpeed, 0)
+                        end
+
+                        if moveDirection.Magnitude > 0 then
+                            velocity = velocity + (camera.CFrame:VectorToWorldSpace(moveDirection) * FlySpeed)
+                        end
+
+                        flyBodyVelocity.Velocity = velocity
+                    end)
+                end
+
+                ContextActionService:BindAction("FlyMobile", function(action, state, input)
+                    if state == Enum.UserInputState.Begin then
+                        local char = LocalPlayer.Character
+                        if not char then return end
+                        local root = char:FindFirstChild("HumanoidRootPart")
+                        if not root then return end
+                        if not flyBodyVelocity then return end
+
+                        local touchPos = input.Position
+                        local center = Vector2.new(
+                            Workspace.CurrentCamera.ViewportSize.X / 2,
+                            Workspace.CurrentCamera.ViewportSize.Y / 2
+                        )
+                        local direction = (Vector2.new(touchPos.X, touchPos.Y) - center).Unit
+                        local velocity = Vector3.new(direction.X * FlySpeed, 0, direction.Y * FlySpeed)
+                        flyBodyVelocity.Velocity = velocity
+                    elseif state == Enum.UserInputState.End then
+                        if flyBodyVelocity then
+                            flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                        end
+                    end
+                end, true, Enum.UserInputType.Touch)
+                ContextActionService:SetTitle("FlyMobile", "Fly")
+                ContextActionService:SetPosition("FlyMobile", UDim2.new(0.9, 0, 0.1, 0))
+            else
+                if flyConnection then
+                    pcall(function() flyConnection:Disconnect() end)
+                    flyConnection = nil
+                end
+                if flyBodyVelocity then
+                    pcall(function() flyBodyVelocity:Destroy() end)
+                    flyBodyVelocity = nil
+                end
+                ContextActionService:UnbindAction("FlyMobile")
+            end
+        end)
+        if not success then
+            warn("Fly toggle failed: " .. tostring(err))
+        end
+    end
+})
+toggles.Fly = flyToggle
+
+PlayerModsSection:Slider({
+    Title = "Fly Speed",
+    Desc = "Set fly speed (10-200)",
+    Value = { Min = 10, Max = 200, Default = 50 },
+    Callback = function(value)
+        local success, err = pcall(function()
+            FlySpeed = value
+        end)
+        if not success then
+            warn("Fly Speed slider failed: " .. tostring(err))
+        end
+    end
+})
+
+-- Settings UI
+SettingsUiSection:Button({
+    Title = "Destroy UI",
+    Desc = "Destroy the UI and cleanup",
+    Icon = "trash-2",
+    Callback = function()
+        local success, err = pcall(function()
+            CleanupAll()
+            local screenGui = CoreGui:FindFirstChild("WindUI")
+            if screenGui then
+                screenGui:Destroy()
+            end
+            if guiToggleConnection then
+                guiToggleConnection:Disconnect()
+                guiToggleConnection = nil
+            end
+        end)
+        if not success then
+            warn("Destroy UI button failed: " .. tostring(err))
+        end
+    end
+})
+
+-- Theme selector
+ThemesSection:Dropdown({
+    Title = "Select Theme",
+    Desc = "Change the UI theme",
+    Values = {
+        "Dark", "Light", "Rose", "Amber", "CottonCandy",
+        "Crimson", "Emerald", "Indigo", "Midnight",
+        "MonokaiPro", "Plant", "Rainbow", "Red",
+        "Violet", "Sky"
+    },
+    Value = "Dark",
+    Callback = function(value)
+        WindUi:SetTheme(value)
+    end
+})
+
+-- Infinite jump handler
+UserInputService.JumpRequest:Connect(function()
+    if InfiniteJumpEnabled and LocalPlayer.Character then
+        local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+-- Visual effects implementations
+function VisualEffects:FireAura()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local fire = Instance.new("Fire")
+    fire.Name = "FireAura"
+    fire.Size = 5
+    fire.Heat = 9
+    fire.Color = RainbowColor(tick())
+    fire.SecondaryColor = RainbowColor(tick() + 2)
+    fire.Parent = root
+
+    rainbowUpdaters["FireAura"] = function(t)
+        if fire and fire.Parent then
+            fire.Color = RainbowColor(t)
+            fire.SecondaryColor = RainbowColor(t + 2)
+        else
+            rainbowUpdaters["FireAura"] = nil
+            StopRainbowLoop()
+        end
+    end
+    StartRainbowLoop()
+end
+
+function VisualEffects:SmokeTrail()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local smoke = Instance.new("Smoke")
+    smoke.Name = "SmokeTrail"
+    smoke.Opacity = 0.3
+    smoke.Color = RainbowColor(tick())
+    smoke.Size = 0.5
+    smoke.Parent = root
+
+    rainbowUpdaters["SmokeTrail"] = function(t)
+        if smoke and smoke.Parent then
+            smoke.Color = RainbowColor(t)
+        else
+            rainbowUpdaters["SmokeTrail"] = nil
+            StopRainbowLoop()
+        end
+    end
+    StartRainbowLoop()
+end
+
+function VisualEffects:SparkleBody()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local sparkles = Instance.new("Sparkles")
+    sparkles.Name = "BodySparkles"
+    sparkles.SparkleColor = RainbowColor(tick())
+    sparkles.Parent = root
+
+    rainbowUpdaters["Sparkles"] = function(t)
+        if sparkles and sparkles.Parent then
+            sparkles.SparkleColor = RainbowColor(t)
+        else
+            rainbowUpdaters["Sparkles"] = nil
+            StopRainbowLoop()
+        end
+    end
+    StartRainbowLoop()
+end
+
+function VisualEffects:ColorShift()
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            local colorEffect = Instance.new("ColorCorrectionEffect")
+            colorEffect.Name = "ColorShift"
+            colorEffect.TintColor = RainbowColor(tick())
+            colorEffect.Parent = part
+        end
+    end
+
+    rainbowUpdaters["ColorShift"] = function(t)
+        local char = LocalPlayer.Character
+        if not char then
+            rainbowUpdaters["ColorShift"] = nil
+            StopRainbowLoop()
+            return
+        end
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                local effect = part:FindFirstChild("ColorShift")
+                if effect then
+                    effect.TintColor = RainbowColor(t)
+                end
+            end
+        end
+    end
+    StartRainbowLoop()
+end
+
+function VisualEffects:NeonGlow()
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Material = Enum.Material.Neon
+            part.BrickColor = BrickColor.new(RainbowColor(tick()))
+        end
+    end
+
+    rainbowUpdaters["NeonGlow"] = function(t)
+        local char = LocalPlayer.Character
+        if not char then
+            rainbowUpdaters["NeonGlow"] = nil
+            StopRainbowLoop()
+            return
+        end
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.BrickColor = BrickColor.new(RainbowColor(t))
+            end
+        end
+    end
+    StartRainbowLoop()
+end
+
+function VisualEffects:StarTrail()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    starTrailEmitter = Instance.new("ParticleEmitter")
+    starTrailEmitter.Name = "StarTrail"
+    starTrailEmitter.Texture = "rbxassetid://243098098"
+    starTrailEmitter.Size = NumberSequence.new(0.5)
+    starTrailEmitter.Transparency = NumberSequence.new(0)
+    starTrailEmitter.Lifetime = NumberRange.new(1)
+    starTrailEmitter.Rate = 50
+    starTrailEmitter.Speed = NumberRange.new(10)
+    starTrailEmitter.VelocitySpread = 180
+    starTrailEmitter.Parent = root
+
+    rainbowUpdaters["StarTrail"] = function(t)
+        if starTrailEmitter and starTrailEmitter.Parent then
+            starTrailEmitter.Color = ColorSequence.new(RainbowColor(t))
+        else
+            rainbowUpdaters["StarTrail"] = nil
+            StopRainbowLoop()
+        end
+    end
+    StartRainbowLoop()
+end
+
+-- Initial FOV setup for aimbot
+if aimbotEnabled and toggles.Aimbot.Value then
+    Aimbot:ShowFov()
+end
+
+-- Handle player leaving
+game:BindToClose(function()
+    CleanupAll()
+end)
+
+-- Notification on script load
+StarterGui:SetCore("SendNotification", {
+    Title = "PrismaticaX",
+    Text = "Successfully loaded! Press Insert to toggle UI.",
+    Duration = 5
+})
